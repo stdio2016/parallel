@@ -5,24 +5,24 @@ void unlinkRow(MatrixCell *n, bool includeN) {
   MatrixCell *e = n;
   if (!includeN) n = n->right;
 
-  while (n != e) {
+  do {
     n->up->down = n->down;
     n->down->up = n->up;
     n->col->size -= 1;
     n = n->right;
-  }
+  } while (n != e) ;
 }
 
 void relinkRow(MatrixCell *n, bool includeN) {
   MatrixCell *e = n;
   if (!includeN) n = n->right;
 
-  while (n != e) {
+  do {
     n->up->down = n;
     n->down->up = n;
     n->col->size += 1;
     n = n->right;
-  }
+  } while (n != e);
 }
 
 void cover(MatrixCell *n) {
@@ -74,7 +74,7 @@ int minfit(MatrixColumn *root, MatrixColumn **result) {
     if (value <= col->max && value >= col->min) continue;
     // unsatisfiable
     if (value > col->max || value + col->size < col->min) {
-      return -2;
+      return -1;
     }
 
     // min fit
