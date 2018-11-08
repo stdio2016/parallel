@@ -6,6 +6,9 @@
 #include "randdp.h"
 #include "timers.h"
 
+// if I can change algorithm to make program faster
+//#define CAN_CHANGE_ALGORITHM
+
 //---------------------------------------------------------------------
 /* common / main_int_mem / */
 static int colidx[NZ];
@@ -184,6 +187,7 @@ int main(int argc, char *argv[])
     //---------------------------------------------------------------------
     norm_temp1 = 0.0;
     norm_temp2 = 0.0;
+    #pragma omp parallel for reduction(+:norm_temp1,norm_temp2)
     for (j = 0; j < lastcol - firstcol + 1; j++) {
       norm_temp1 = norm_temp1 + x[j] * z[j];
       norm_temp2 = norm_temp2 + z[j] * z[j];
@@ -194,6 +198,7 @@ int main(int argc, char *argv[])
     //---------------------------------------------------------------------
     // Normalize z to obtain x
     //---------------------------------------------------------------------
+    #pragma omp parallel for
     for (j = 0; j < lastcol - firstcol + 1; j++) {     
       x[j] = norm_temp2 * z[j];
     }
@@ -236,6 +241,7 @@ int main(int argc, char *argv[])
     //---------------------------------------------------------------------
     norm_temp1 = 0.0;
     norm_temp2 = 0.0;
+    #pragma omp parallel for reduction(+:norm_temp1,norm_temp2)
     for (j = 0; j < lastcol - firstcol + 1; j++) {
       norm_temp1 = norm_temp1 + x[j]*z[j];
       norm_temp2 = norm_temp2 + z[j]*z[j];
@@ -251,6 +257,7 @@ int main(int argc, char *argv[])
     //---------------------------------------------------------------------
     // Normalize z to obtain x
     //---------------------------------------------------------------------
+    #pragma omp parallel for
     for (j = 0; j < lastcol - firstcol + 1; j++) {
       x[j] = norm_temp2 * z[j];
     }
@@ -320,6 +327,8 @@ static void conj_grad(int colidx[],
   // rho = r.r
   // Now, obtain the norm of r: First, sum squares of r elements locally...
   //---------------------------------------------------------------------
+  // the next line makes the program slower!
+  //#pragma omp parallel for reduction(+:rho)
   for (j = 0; j < lastcol - firstcol + 1; j++) {
     rho = rho + r[j]*r[j];
   }
@@ -342,6 +351,7 @@ static void conj_grad(int colidx[],
     //       The unrolled-by-8 version below is significantly faster
     //       on the Cray t3d - overall speed of code is 1.5 times faster.
 
+    #pragma omp parallel for private(sum, k)
     for (j = 0; j < lastrow - firstrow + 1; j++) {
       sum = 0.0;
       for (k = rowstr[j]; k < rowstr[j+1]; k++) {
@@ -354,6 +364,7 @@ static void conj_grad(int colidx[],
     // Obtain p.q
     //---------------------------------------------------------------------
     d = 0.0;
+    #pragma omp parallel for reduction(+:d)
     for (j = 0; j < lastcol - firstcol + 1; j++) {
       d = d + p[j]*q[j];
     }
@@ -373,6 +384,7 @@ static void conj_grad(int colidx[],
     // and    r = r - alpha*q
     //---------------------------------------------------------------------
     rho = 0.0;
+    #pragma omp parallel for
     for (j = 0; j < lastcol - firstcol + 1; j++) {
       z[j] = z[j] + alpha*p[j];  
       r[j] = r[j] - alpha*q[j];
@@ -382,6 +394,7 @@ static void conj_grad(int colidx[],
     // rho = r.r
     // Now, obtain the norm of r: First, sum squares of r elements locally...
     //---------------------------------------------------------------------
+    #pragma omp parallel for reduction(+:rho)
     for (j = 0; j < lastcol - firstcol + 1; j++) {
       rho = rho + r[j]*r[j];
     }
@@ -394,6 +407,7 @@ static void conj_grad(int colidx[],
     //---------------------------------------------------------------------
     // p = r + beta*p
     //---------------------------------------------------------------------
+    #pragma omp parallel for
     for (j = 0; j < lastcol - firstcol + 1; j++) {
       p[j] = r[j] + beta*p[j];
     }
@@ -405,6 +419,7 @@ static void conj_grad(int colidx[],
   // The partition submatrix-vector multiply
   //---------------------------------------------------------------------
   sum = 0.0;
+  #pragma omp parallel for private(d, k)
   for (j = 0; j < lastrow - firstrow + 1; j++) {
     d = 0.0;
     for (k = rowstr[j]; k < rowstr[j+1]; k++) {
@@ -416,6 +431,7 @@ static void conj_grad(int colidx[],
   //---------------------------------------------------------------------
   // At this point, r contains A.z
   //---------------------------------------------------------------------
+  #pragma omp parallel for reduction(+:sum) private(d)
   for (j = 0; j < lastcol-firstcol+1; j++) {
     d   = x[j] - r[j];
     sum = sum + d*d;
@@ -604,6 +620,17 @@ static void sparse(double a[],
         }
 
         cont40 = false;
+
+#ifdef CAN_CHANGE_ALGORITHM
+        // original algorithm has data dependency that cannot be parallelized
+        // so I modify the way to sort elements
+        k = rowstr[j] + nzloc[j];
+        nzloc[j] = nzloc[j] + 1;
+        colidx[k] = jcol;
+        cont40 = true;
+
+#else // original program
+
         for (k = rowstr[j]; k < rowstr[j+1]; k++) {
           if (colidx[k] > jcol) {
             //----------------------------------------------------------------
@@ -632,6 +659,8 @@ static void sparse(double a[],
             break;
           }
         }
+#endif // CAN_CHANGE_ALGORITHM
+
         if (cont40 == false) {
           printf("internal error in sparse: i=%d\n", i);
           exit(EXIT_FAILURE);
@@ -641,6 +670,42 @@ static void sparse(double a[],
     }
     size = size * ratio;
   }
+
+#ifdef CAN_CHANGE_ALGORITHM
+  // change algorithm
+  #pragma omp parallel for private(i,k,jcol,va,kk,nzrow)
+  for (j = 0; j < nrows; j++) {
+    nzloc[j] = 0;
+    i = rowstr[j];
+    // do insertion sort
+    for (k = rowstr[j] + 1; k < rowstr[j+1]; k++) {
+      jcol = colidx[k];
+      va = a[k];
+      // find a place to insert
+      for (kk = i; kk >= rowstr[j]; --kk) {
+        if (colidx[kk] <= jcol) {
+          break;
+        }
+      }
+      if (kk >= rowstr[j] && colidx[kk] == jcol) {
+        // duplicate entry
+        a[kk] = a[kk] + va;
+        nzloc[j] = nzloc[j] + 1;
+      }
+      else {
+        // shift elements
+        for (nzrow = i; nzrow >= kk; --nzrow) {
+          colidx[nzrow+1] = colidx[nzrow];
+          a[nzrow+1] = a[nzrow];
+        }
+        ++kk;
+        a[kk] = va;
+        colidx[kk] = jcol;
+        ++i;
+      }
+    }
+  }
+#endif // CAN_CHANGE_ALGORITHM
 
   //---------------------------------------------------------------------
   // ... remove empty entries and generate final results
@@ -679,6 +744,8 @@ static void sparse(double a[],
 // this corrects a performance bug found by John G. Lewis, caused by
 // reinitialization of mark on every one of the n calls to sprnvc
 //---------------------------------------------------------------------
+
+// this procedure changes random number state and cannot be parallelized
 static void sprnvc(int n, int nz, int nn1, double v[], int iv[])
 {
   int nzv, ii, i;
