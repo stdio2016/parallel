@@ -9,8 +9,12 @@ int main(int argc, char **argv)
 {
   long long i, num_intervals;
   double rect_width, area, sum, x_middle; 
+  int size, rank;
 
   MPI_Init(&argc, &argv);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
   // foolproof
   if (argc < 2) {
     fprintf(stderr, "usage: %s <number of intervals>\n", argv[0]);
@@ -31,6 +35,7 @@ int main(int argc, char **argv)
     sum = sum + area;
   } 
 
+  printf("from %d %d\n", rank, size);
   printf("The total area is: %f\n", (float)sum);
 
   MPI_Finalize();
