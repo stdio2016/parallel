@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <math.h>
+#include <stdlib.h>
+#include "mpi.h"
 
 #define PI 3.1415926535
 
@@ -7,6 +9,13 @@ int main(int argc, char **argv)
 {
   long long i, num_intervals;
   double rect_width, area, sum, x_middle; 
+
+  MPI_Init(&argc, &argv);
+  // foolproof
+  if (argc < 2) {
+    fprintf(stderr, "usage: %s <number of intervals>\n", argv[0]);
+    exit(EXIT_FAILURE);
+  }
 
   sscanf(argv[1],"%llu",&num_intervals);
 
@@ -24,5 +33,6 @@ int main(int argc, char **argv)
 
   printf("The total area is: %f\n", (float)sum);
 
+  MPI_Finalize();
   return 0;
 }   
