@@ -3,6 +3,19 @@
 #include <math.h>
 #include "mpi.h"
 
+// skip multiples of 2,3,5,7
+#define WHEEL_SIZE 48
+#define WHEEL_PRODUCT 210
+int wheel[WHEEL_SIZE] = {
+    1,  11,  13,  17,  19,  23,  29,  31,
+   37,  41,  43,  47,  53,  59,  61,  67,
+   71,  73,  79,  83,  89,  97, 101, 103,
+  107, 109, 113, 121, 127, 131, 137, 139,
+  143, 149, 151, 157, 163, 167, 169, 173,
+  179, 181, 187, 191, 193, 197, 199, 209
+};
+int skip[WHEEL_SIZE];
+
 int isprime(int n) {
   int i,squareroot;
   if (n>10) {
@@ -55,11 +68,28 @@ int main(int argc, char *argv[])
     pc = 0;
   }
 
-  for (n=11+2*rank; n<=limit; n=n+2*size) {
+  // compute skip list for this node
+  int cycle = (rank+1) / WHEEL_SIZE;
+  int rem = (rank+1) % WHEEL_SIZE;
+  for (n=0; n<WHEEL_SIZE; n++) {
+    int newn = rem + size;
+    int newcycle = newn / WHEEL_SIZE;
+    int newrem = newn % WHEEL_SIZE;
+    skip[n] = newcycle * WHEEL_PRODUCT + wheel[newrem] - wheel[rem];
+    rem = newrem;
+  }
+  // compute start number
+  rem = (rank+1) % WHEEL_SIZE;
+  n = cycle*WHEEL_PRODUCT + wheel[rem];
+  
+  // skip some numbers to balance workload
+  for (rem = -1; n<=limit; n=n+skip[rem]) {
     if (isprime(n)) {
       pc++;
       foundone = n;
     }			
+    rem++;
+    if (rem == WHEEL_SIZE) rem = 0;
   }
 
   long long pix, largest;
