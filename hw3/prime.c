@@ -1,7 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "mpi.h"
+
+// toggle MPI
+#define USE_MPI
+
+#ifdef USE_MPI
+  #include "mpi.h"
+#endif
 
 // skip multiples of 2,3,5,7
 #define WHEEL_SIZE 48
@@ -15,14 +21,28 @@ int wheel[WHEEL_SIZE] = {
   179, 181, 187, 191, 193, 197, 199, 209
 };
 int skip[WHEEL_SIZE];
+int dWheel[WHEEL_SIZE] = {
+  10, 2, 4, 2, 4, 6, 2, 6,
+   4, 2, 4, 6, 6, 2, 6, 4,
+   2, 6, 4, 6, 8, 4, 2, 4,
+   2, 4, 8, 6, 4, 6, 2, 4,
+   6, 2, 6, 6, 4, 2, 4, 6,
+   2, 6, 4, 2, 4, 2,10, 2
+};
 
 int isprime(int n) {
   int i,squareroot;
   if (n>10) {
+    int rem = 0;
     squareroot = (int) sqrt(n);
-    for (i=3; i<=squareroot; i=i+2)
+    // skip divisors that are divisible by 2,3,5,7
+    // this provides x2 speedup
+    for (i=11; i<=squareroot; i=i+dWheel[rem]) {
       if ((n%i)==0)
         return 0;
+      rem += 1;
+      if (rem == WHEEL_SIZE) rem = 0;
+    }
     return 1;
   }
   else
@@ -35,15 +55,19 @@ int main(int argc, char *argv[])
       foundone=0; /* most recent prime found */
   long long int n, limit;
 
+  int size = 1, rank = 0;
+#ifdef USE_MPI
   MPI_Init(&argc, &argv);
-  int size, rank;
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
 
-  // foolproof
+  // argument check
   if (argc <= 1) {
     if (rank==0) fprintf(stderr, "usage: %s <integer>\n", argv[0]);
+#ifdef USE_MPI
     MPI_Finalize();
+#endif
     return 0;
   }
 
@@ -92,13 +116,17 @@ int main(int argc, char *argv[])
     if (rem == WHEEL_SIZE) rem = 0;
   }
 
-  long long pix, largest;
+  long long pix = pc, largest = foundone;
+#ifdef USE_MPI
   // all nodes need to enter reduce instruction
   MPI_Reduce(&pc, &pix, 1, MPI_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
   MPI_Reduce(&foundone, &largest, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
+#endif
   if (rank == 0) {
     printf("Done. Largest prime is %lld Total primes %lld\n",largest,pix);
   }
+#ifdef USE_MPI
   MPI_Finalize();
+#endif
   return 0;
 } 
