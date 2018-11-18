@@ -3,7 +3,9 @@
 #include <math.h>
 
 // toggle MPI
-#define USE_MPI
+#ifndef DONT_USE_MPI
+  #define USE_MPI
+#endif
 
 #ifdef USE_MPI
   #include "mpi.h"

@@ -2,8 +2,10 @@
 #include <math.h>
 #include <stdlib.h>
 
-// switch
-#define USE_MPI
+// toggle MPI
+#ifndef DONT_USE_MPI
+  #define USE_MPI
+#endif
 
 #ifdef USE_MPI
   #include "mpi.h"
