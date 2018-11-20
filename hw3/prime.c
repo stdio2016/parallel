@@ -13,6 +13,8 @@
   #include "mpi.h"
 #endif
 
+#define CAN_CHANGE_ALGORITHM
+
 // skip multiples of 2,3,5,7
 #define WHEEL_SIZE 48
 #define WHEEL_PRODUCT 210
@@ -234,18 +236,22 @@ int main(int argc, char *argv[])
     // only forst node should include primes in [1,sqrt(n)]
     if (rank == 0) pc += count;
     else pc = count;
-    foundone = limit;
-    // only works for odd numbers
-    if (foundone%2 == 0) foundone -= 1;
-    while (foundone%3 == 0 || foundone%5 == 0 || foundone%7 == 0
-       || !isprimeLL(foundone)) {
-      foundone -= 2;
+    if (rank == 0) {
+      // find largest prime number <= limit
+      foundone = limit;
+      // only try odd numbers
+      if (foundone%2 == 0) foundone -= 1;
+      while (foundone%3 == 0 || foundone%5 == 0 || foundone%7 == 0
+         || !isprimeLL(foundone)) {
+        foundone -= 2;
+      }
     }
+    else foundone = 0;
     
     free(primes);
     free(table);
   }
-#else
+#else // normal algorithm
   if (rank == 0) {
     pc=4;     /* Assume (2,3,5,7) are counted here */
     if (limit < 11) {
@@ -285,7 +291,7 @@ int main(int argc, char *argv[])
     rem++;
     if (rem == WHEEL_SIZE) rem = 0;
   }
-#endif
+#endif // CAN_CHANGE_ALGORITHM
 
   long long pix = pc, largest = foundone;
 #ifdef USE_MPI
