@@ -13,8 +13,6 @@
   #include "mpi.h"
 #endif
 
-#define CAN_CHANGE_ALGORITHM
-
 // skip multiples of 2,3,5,7
 #define WHEEL_SIZE 48
 #define WHEEL_PRODUCT 210
