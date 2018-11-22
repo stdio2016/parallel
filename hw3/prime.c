@@ -13,7 +13,9 @@
   #include "mpi.h"
 #endif
 
-#define CAN_CHANGE_ALGORITHM
+#ifndef OLD_METHOD
+  #define CAN_CHANGE_ALGORITHM
+#endif
 
 // skip multiples of 2,3,5,7
 #define WHEEL_SIZE 48
