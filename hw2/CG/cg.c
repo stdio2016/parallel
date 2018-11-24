@@ -8,10 +8,11 @@
 
 // if I can change algorithm to make program faster
 //#define CAN_CHANGE_ALGORITHM
+#include <immintrin.h>
 
 //---------------------------------------------------------------------
 /* common / main_int_mem / */
-static int colidx[NZ];
+static int colidx[NZ+64];
 static int rowstr[NA+1];
 static int iv[NA];
 static int arow[NA];
@@ -19,7 +20,7 @@ static int acol[NAZ];
 
 /* common / main_flt_mem / */
 static double aelt[NAZ];
-static double a[NZ];
+static double a[NZ+64];
 static double x[NA+2];
 static double z[NA+2];
 static double p[NA+2];
@@ -354,8 +355,66 @@ static void conj_grad(int colidx[],
     #pragma omp parallel for private(sum, k)
     for (j = 0; j < lastrow - firstrow + 1; j++) {
       sum = 0.0;
-      for (k = rowstr[j]; k < rowstr[j+1]; k++) {
-        sum = sum + a[k]*p[colidx[k]];
+      int km = rowstr[j+1]&~7;
+      int ks = rowstr[j];
+      k = ks&~7;
+      if (k < km) {
+        switch (ks&7) {
+          case 0: sum = sum + a[k]*p[colidx[k]];
+          case 1: sum = sum + a[k+1]*p[colidx[k+1]];
+          case 2: sum = sum + a[k+2]*p[colidx[k+2]];
+          case 3: sum = sum + a[k+3]*p[colidx[k+3]];
+          case 4: sum = sum + a[k+4]*p[colidx[k+4]];
+          case 5: sum = sum + a[k+5]*p[colidx[k+5]];
+          case 6: sum = sum + a[k+6]*p[colidx[k+6]];
+          case 7: sum = sum + a[k+7]*p[colidx[k+7]];
+        }
+        __m128d s1 = _mm_setzero_pd();
+        __m128d s2 = _mm_setzero_pd();
+        __m128d p1,p2,a1,a2,r1,r2;
+        for (k=k+8; k < km; k+=8) {
+          _mm_prefetch(&colidx[k], _MM_HINT_NTA);
+          _mm_prefetch(&a[k], _MM_HINT_NTA);
+          p1 = _mm_load_sd(p+colidx[k]);
+          p2 = _mm_load_sd(p+colidx[k+2]);
+          a1 = _mm_load_pd(a+k);
+          a2 = _mm_load_pd(a+k+2);
+          p1 = _mm_loadh_pd(p1, p+colidx[k+1]);
+          p2 = _mm_loadh_pd(p2, p+colidx[k+3]);
+          r1 = _mm_mul_pd(a1, p1);
+          r2 = _mm_mul_pd(a2, p2);
+          s1 = _mm_add_pd(s1, r1);
+          s2 = _mm_add_pd(s2, r2);
+          
+          p1 = _mm_load_sd(p+colidx[k+4]);
+          p2 = _mm_load_sd(p+colidx[k+6]);
+          a1 = _mm_load_pd(a+k+4);
+          a2 = _mm_load_pd(a+k+6);
+          p1 = _mm_loadh_pd(p1, p+colidx[k+5]);
+          p2 = _mm_loadh_pd(p2, p+colidx[k+7]);
+          r1 = _mm_mul_pd(a1, p1);
+          r2 = _mm_mul_pd(a2, p2);
+          s1 = _mm_add_pd(s1, r1);
+          s2 = _mm_add_pd(s2, r2);
+        }
+        double s4[4];
+        s1 = _mm_add_pd(s1, s2);
+        _mm_storeu_pd(s4, s1);
+        sum += s4[0] + s4[1];
+        switch (rowstr[j+1]&7) {
+          case 7: sum = sum + a[k+6]*p[colidx[k+6]];
+          case 6: sum = sum + a[k+5]*p[colidx[k+5]];
+          case 5: sum = sum + a[k+4]*p[colidx[k+4]];
+          case 4: sum = sum + a[k+3]*p[colidx[k+3]];
+          case 3: sum = sum + a[k+2]*p[colidx[k+2]];
+          case 2: sum = sum + a[k+1]*p[colidx[k+1]];
+          case 1: sum = sum + a[k]*p[colidx[k]];
+        }
+      }
+      else {
+        for (k = rowstr[j]; k < rowstr[j+1]; k++) {
+          sum = sum + a[k]*p[colidx[k]];
+        }
       }
       q[j] = sum;
     }
@@ -812,4 +871,3 @@ static void vecset(int n, double v[], int iv[], int *nzv, int i, double val)
     *nzv     = *nzv + 1;
   }
 }
-
