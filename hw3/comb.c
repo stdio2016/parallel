@@ -6,11 +6,11 @@
 int *PiTable;
 int *MuTable;
 int *FTable;
-int64_t *SmallPrimes;
+uint32_t *SmallPrimes;
 int PiSqrtN;
 int64_t Steps;
 
-#define DEBUG
+//#define DEBUG
 
 static inline void countStep() {
 #ifdef DEBUG
@@ -75,7 +75,7 @@ void buildTable(int64_t n) {
   
   pisqrtN = 0;
   for (i = 0; i <= n; i++) pisqrtN += PiTable[i];
-  SmallPrimes = malloc(pisqrtN * sizeof(int64_t));
+  SmallPrimes = malloc(pisqrtN * sizeof(uint32_t));
   pisqrtN = 0;
   for (i = 2; i <= n; i++) {
     if (PiTable[i]) {
@@ -104,7 +104,7 @@ int64_t phiHard(int64_t x) {
   int64_t sqrtX = intSqrt(x);
   int64_t x14 = intSqrt(sqrtX);
   int64_t b, sum = 0;
-  int64_t *phiTable = malloc((sqrtX+1) * sizeof(int64_t));
+  uint32_t *phiTable = malloc((sqrtX+1) * sizeof(uint32_t));
   for (b = 0; b <= sqrtX; b++) phiTable[b] = b;
   
   for (b = 1; b <= PiTable[x14]; b++) {
@@ -112,14 +112,19 @@ int64_t phiHard(int64_t x) {
     int64_t pb = SmallPrimes[b-1];
     for (i = sqrtX/pb + 1; i <= sqrtX; i ++) {
       if (FTable[i] > b) {
-        int64_t con = phiTable[x / (i*pb)] * MuTable[i];
+        int64_t con = (int64_t)phiTable[x / (i*pb)] * MuTable[i];
         sum += con;
       }
       countStep();
     }
-    for (i = sqrtX; i > 0; i--) {
-      phiTable[i] -= phiTable[i / pb];
-      countStep();
+    i = sqrtX;
+    int64_t j;
+    for (j = sqrtX / pb; j >= 0; j--) {
+      int64_t pj = phiTable[j], iM = j * pb;
+      for (; i >= iM; i--) {
+        phiTable[i] -= pj;
+        countStep();
+      }
     }
   }
   free(phiTable);
