@@ -1,0 +1,17 @@
+dlx
+col A1 min 0 max 1
+col A2 min 0 max 1
+col B1 min 0 max 1
+col B2 min 0 max 1
+col C1 min 0 max 1
+col C2 min 0 max 1
+col D1 min 0 max 1
+col dom min 3 max 3
+row v1 dom A1 A2
+row v2 dom B1 B2
+row v3 dom C1 C2
+row h1 dom A1 B1
+row h2 dom B1 C1
+row h3 dom C1 D1
+row h4 dom A2 B2
+row h5 dom B2 C2

@@ -1,9 +1,18 @@
 #include <cstdio>
+#include <fstream>
 #include "dlx.h"
+#include "loader.h"
 
 // solve N queen problem
 int main(void)
 {
+  DLXLoader loader;
+  std::ifstream f("good.txt");
+  if (f) {
+    printf("Yes!!!\n");
+    loader.readFile(f);
+    f.close();
+  }
   DLXSolver d;
   int N = 13;
   MatrixColumn *cols = new MatrixColumn[1+N*2+(2*N-1)*2];
