@@ -135,7 +135,44 @@ int isprimeBPSW(int64_t n) {
     // lucas probable prime
     int64_t P = 1;
     int64_t Q = (1 - D) / 4;
-    // TODO
+    if (Q < 0) Q += n;
+    if (D < 0) D += n;
+    s = 0;
+    for (d = n+1; (d&1) == 0; d >>= 1) s++;
+    int64_t b;
+    i = 0;
+    for (b = d; b > 0; b >>= 1) i++;
+    int64_t U = 0, V = 2, Qn = 1;
+    for (i = i - 1; i >= 0; i--) {
+      U = mod_mul(U, V, n);
+      V = mod_mul(V, V, n) - Qn;
+      if (V < 0) V += n;
+      V -= Qn;
+      if (V < 0) V += n;
+      Qn = mod_mul(Qn, Qn, n);
+      if (d>>i & 1) {
+        uint64_t U2k = mod_mul(P, U, n) + V;
+        uint64_t V2k = mod_mul(D, U, n) + mod_mul(P, V, n);
+        if (U2k >= n) U2k -= n;
+        if (U2k&1) U = U2k+n >> 1;
+        else U = U2k >> 1;
+        if (V2k >= n) V2k -= n;
+        if (V2k&1) V = V2k+n >> 1;
+        else V = V2k >> 1;
+        Qn = mod_mul(Qn, Q, n);
+      }
+    }
+    if (U != 0 && V != 0) {
+      for (i = 1; i < s; i++) {
+        V = mod_mul(V, V, n) - Qn;
+        if (V < 0) V += n;
+        V -= Qn;
+        if (V < 0) V += n;
+        if (V == 0) break;
+        Qn = mod_mul(Qn, Qn, n);
+      }
+      if (i == s) return 0;
+    }
     return 1;
   }
   else
