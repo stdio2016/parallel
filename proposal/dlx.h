@@ -11,9 +11,9 @@ struct MatrixCell {
   MatrixCell *right;
   MatrixColumn *col;
   int row;
-  MatrixCell(int id, MatrixColumn *c) {
-    col = c;
-    row = id;
+  MatrixCell(): up(this), down(this), left(this), right(this),
+    col(NULL), row(0)
+  {
   }
   void setRight(MatrixCell *n) {
     right = n;
@@ -32,8 +32,10 @@ struct MatrixCell {
 struct MatrixColumn : MatrixCell {
   int size;
   int value, min, max;
-  MatrixColumn(int id, int min, int max):
-    MatrixCell(id,NULL), size(0), value(0), min(min), max(max) {}
+  MatrixColumn(): MatrixCell(),
+    size(0), value(0), min(1), max(1)
+  {
+  }
 };
 
 struct DLXSolver {
@@ -41,9 +43,6 @@ struct DLXSolver {
   int solCount;
   int lv, maxLv;
   MatrixColumn *root;
-  std::vector<MatrixColumn *> cols;
-  std::vector<MatrixCell *> rows;
-  std::vector<MatrixCell *> cells;
   struct StackFrame {
     MatrixCell *n;
     MatrixColumn *c;
@@ -60,14 +59,87 @@ struct DLXSolver {
     tried = maxTry = 0;
     solCount = 0;
     lv = maxLv = 0;
-    root = new MatrixColumn(-1, 0, 0);
-    root->left = root->right = root->up = root->down = root;
+    root = NULL;
     removedRowCount = 0;
   }
-  void addColumn(int id, int min, int max);
-  void addRow(int id);
-  void addCell(int row, int col);
   void setMaxLv(int n);
+  int minfit(MatrixColumn **result);
+  void setRowCount(int n);
+  void setRoot(MatrixColumn *node);
+
+  void unlinkRow(MatrixCell *n, bool includeN);
+  void relinkRow(MatrixCell *n, bool includeN);
+  void cover(MatrixCell *n);
+  void uncover(MatrixCell *n);
 };
+
+inline void DLXSolver::unlinkRow(MatrixCell *n, bool includeN) {
+  //printf("unlink %d\n", n->row);
+  MatrixCell *e = n;
+  if (!includeN) n = n->right;
+
+  do {
+    n->up->down = n->down;
+    n->down->up = n->up;
+    n->col->size -= 1;
+    n = n->right;
+  } while (n != e) ;
+}
+
+inline void DLXSolver::relinkRow(MatrixCell *n, bool includeN) {
+  //printf("relink %d\n", n->row);
+  MatrixCell *e = n;
+  if (!includeN) n = n->right;
+
+  do {
+    n->up->down = n;
+    n->down->up = n;
+    n->col->size += 1;
+    n = n->right;
+  } while (n != e) ;
+}
+
+inline void DLXSolver::cover(MatrixCell *n) {
+  //printf("cover %d\n", n->row);
+  MatrixCell *n2, *n3;
+  MatrixColumn *c2;
+  unlinkRow(n, true);
+  n2 = n;
+  do {
+    c2 = n2->col;
+    c2->value += 1;
+    if (c2->value == c2->max) {
+      c2->left->right = c2->right;
+      c2->right->left = c2->left;
+      n3 = c2->down;
+      while (n3 != c2) {
+        unlinkRow(n3, false);
+        n3 = n3->down;
+      }
+    }
+    n2 = n2->right;
+  } while (n2 != n) ;
+}
+
+inline void DLXSolver::uncover(MatrixCell *n) {
+  //printf("uncover %d\n", n->row);
+  MatrixCell *n2, *n3;
+  MatrixColumn *c2;
+  n2 = n;
+  do {
+    n2 = n2->left;
+    c2 = n2->col;
+    if (c2->value == c2->max) {
+      n3 = c2->up;
+      while (n3 != c2) {
+        relinkRow(n3, false);
+        n3 = n3->up;
+      }
+      c2->left->right = c2;
+      c2->right->left = c2;
+    }
+    c2->value -= 1;
+  } while (n2 != n) ;
+}
 
 #endif
