@@ -12,6 +12,15 @@ int main(void)
     printf("Yes!!!\n");
     loader.readFile(f);
     f.close();
+    DLXSolver d;
+    d.maxTry = -1;
+    d.setMaxLv(loader.rows.size());
+    d.setRoot(loader.root);
+    d.setRowCount(loader.rows.size());
+    d.dlx();
+    printf("solution count: %d\n", d.solCount);
+    delete [] loader.root;
+    delete [] loader.cells;
   }
   DLXSolver d;
   int N = 13;

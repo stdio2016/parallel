@@ -21,6 +21,8 @@ struct DLXLoader {
   MatrixCell *cells;
   MatrixColumn *root;
   
+  int cellCount;
+  
   void readFile(std::istream &in);
 };
 
