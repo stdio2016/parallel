@@ -136,7 +136,7 @@ __global__ void updateKernel(float *gpuMem, int nsteps, int tpoints) {
   int i;
   for (i = 1; i <= nsteps; i++) {
     float newval;
-    newval = (2.0f * value) - oldval + (sqtau *  (-2.0f)*value);
+    newval = value + ((value - oldval) + (sqtau *  (-2.0f)*value));
     oldval = value;
     value = newval;
   }
