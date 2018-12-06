@@ -1,8 +1,3 @@
-/**********************************************************************
- * DESCRIPTION:
- *   Serial Concurrent Wave Equation - C Version
- *   This program implements the concurrent wave equation
- *********************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -12,6 +7,8 @@
 #define MAXSTEPS 1000000
 #define MINPOINTS 20
 #define PI 3.14159265
+
+#define THREAD_COUNT 1024
 
 void check_param(void);
 void init_line(void);
@@ -119,6 +116,34 @@ void update()
    }
 }
 
+/* update one value for each thread */
+__global__ void updateKernel(float *gpuMem, int nsteps, int tpoints) {
+  int j = blockIdx.x * blockDim.x + threadIdx.x;
+  float dtime, c, dx, tau, sqtau;
+
+  dtime = 0.3;
+  c = 1.0;
+  dx = 1.0;
+  tau = (c * dtime / dx);
+  sqtau = tau * tau;
+  
+  /* thread might be unused */
+  if (j >= tpoints-1) return ;
+  float value = gpuMem[j];
+  float oldval = value;
+  
+  /* update values for each time step */
+  int i;
+  for (i = 1; i <= nsteps; i++) {
+    float newval;
+    newval = (2.0f * value) - oldval + (sqtau *  (-2.0f)*value);
+    oldval = value;
+    value = newval;
+  }
+  
+  gpuMem[j] = value;
+}
+
 /**********************************************************************
  *     Print final results
  *********************************************************************/
@@ -133,20 +158,44 @@ void printfinal()
    }
 }
 
+void TellError(int err) {
+  if (err == cudaErrorInvalidValue) puts("invalid value");
+  if (err == cudaErrorInvalidDevicePointer) puts("invalid device pointer");
+  if (err == cudaErrorInvalidMemcpyDirection) puts("invalid memcpy direction");
+}
+
 /**********************************************************************
  *	Main program
  *********************************************************************/
 int main(int argc, char *argv[])
 {
+  if (argc < 3) return 1;
 	sscanf(argv[1],"%d",&tpoints);
 	sscanf(argv[2],"%d",&nsteps);
 	check_param();
+  
+  /* calculate block size and allocate gpu memory */
+  int blockCount = (tpoints + (THREAD_COUNT)) / (THREAD_COUNT);
+  int size = blockCount * (THREAD_COUNT);
+  int usedSize = (tpoints + 1);
+  float *gpuMem;
+  int e;
+  e = cudaMalloc((void**)&gpuMem, size * sizeof(float));
+  if (e != cudaSuccess) TellError(e);
+  
 	printf("Initializing points on the line...\n");
 	init_line();
+  e = cudaMemcpy(gpuMem, values+1, usedSize * sizeof(float), cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) TellError(e);
+  
 	printf("Updating all points for all time steps...\n");
-	update();
+	updateKernel<<<blockCount, THREAD_COUNT>>>(gpuMem, nsteps, tpoints);
+  e = cudaMemcpy(values+1, gpuMem, usedSize * sizeof(float), cudaMemcpyDeviceToHost);
+  if (e != cudaSuccess) TellError(e);
+
 	printf("Printing final results...\n");
 	printfinal();
+  cudaFree(gpuMem);
 	printf("\nDone.\n\n");
 	
 	return 0;
