@@ -1,0 +1,11 @@
+# binary file
+histogram
+original
+gen
+
+# send to e3
+*.zip
+
+# test case
+input
+*.out

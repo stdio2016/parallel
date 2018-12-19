@@ -46,7 +46,7 @@ int main(int argc, char const *argv[])
 	unsigned int * histogram_results;
 	unsigned int i=0, a, input_size;
 	std::fstream inFile("input", std::ios_base::in);
-	std::ofstream outFile("xxxxxx.out", std::ios_base::out);
+	std::ofstream outFile("yyyyyy.out", std::ios_base::out);
 
 	inFile >> input_size;
 	unsigned int *image = new unsigned int[input_size];
