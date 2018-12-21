@@ -6,6 +6,6 @@ fi
 more_files="histogram.cl"
 mv histogram.cpp h1stogram.cpp
 sed s/yyyyyy/$1/ h1stogram.cpp > histogram.cpp
-zip $1.zip histogram.cpp $more_files
+zip HW5_$1.zip histogram.cpp $more_files
 rm histogram.cpp
 mv h1stogram.cpp histogram.cpp
