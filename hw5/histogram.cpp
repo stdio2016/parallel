@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include <CL/cl.h>
+#define THREAD_COUNT 10
 
 // OpenCL context
 cl_platform_id platform;
@@ -76,7 +77,7 @@ cl_program loadKernel(const char *name) {
 		return 0;
 	}
 	err = clBuildProgram(prog, 0, NULL, "", NULL, NULL);
-	if (err == CL_BUILD_PROGRAM_FAILURE) {
+	if (err != CL_SUCCESS) {
 		std::cerr << "program \"" << name << "\" has errors:\n";
 		size_t len;
 		err = clGetProgramBuildInfo(prog, device, CL_PROGRAM_BUILD_LOG, 0, NULL, &len);
@@ -89,17 +90,13 @@ cl_program loadKernel(const char *name) {
 		delete [] code;
 		return 0;
 	}
-	else if (err != CL_SUCCESS) {
-		std::cerr << "cannot build program \"" << name << "\"\n";
-		return 0;
-	}
 	return prog;
 }
 
 int main(int argc, char const *argv[])
 {
 	// opencl init and load kernel
-	cl_int err1, err2;
+	cl_int err1, err2, err3;
 	if (initCL() == false) exit(1);
 	cl_program histogramProg = loadKernel("histogram.cl");
 	if (histogramProg == 0) {
@@ -111,59 +108,112 @@ int main(int argc, char const *argv[])
 		return 1;
 	}
 
-	unsigned int * histogram_results;
-	unsigned int a, input_size;
-	std::fstream inFile("input", std::ios_base::in);
+	// open file
+	FILE *inFile = fopen("input", "rb");
 	std::ofstream outFile("yyyyyy.out", std::ios_base::out);
 
-	inFile >> input_size;
-	unsigned char *image = new unsigned char[input_size];
-	for ( unsigned i = 0; i < input_size; i++ ) {
-		inFile >> a;
-		image[i] = a;
-	}
+	// create buffer in host
+	size_t input_size = 1<<25;
+	size_t his_size = 256 * 3 * sizeof(unsigned int) * THREAD_COUNT;
+	char *fileBuf = new char[input_size];
+	unsigned int * histogram_partial = new unsigned int[256 * 3 * THREAD_COUNT];
+	unsigned int * histogram_results = (unsigned int *) calloc(sizeof(int[256 * 3]), 1);
+	size_t range_size = sizeof(int[THREAD_COUNT+1]);
+	int *rangeArr = new int[THREAD_COUNT+1];
 
-	// create buffer
-	size_t his_size = 256 * 3 * sizeof(unsigned int);
-	cl_mem image_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, input_size, NULL, &err1);
+	// create buffer in device
+	cl_mem str_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, input_size, NULL, &err1);
 	cl_mem his_cl = clCreateBuffer(context, CL_MEM_WRITE_ONLY, his_size, NULL, &err2);
+	cl_mem range_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, range_size, NULL, &err3);
 	if (err1 != CL_SUCCESS || err2 != CL_SUCCESS) {
 		std::cerr << "failed to create buffer\n";
 		return 1;
 	}
 
-	// send data
-	histogram_results = (unsigned int *) calloc(his_size, 1);
-	err1 = clEnqueueWriteBuffer(queue, image_cl, CL_TRUE, 0, input_size, image, 0, NULL, NULL);
-	err2 = clEnqueueWriteBuffer(queue, his_cl, CL_TRUE, 0, his_size, histogram_results, 0, NULL, NULL);
-	if (err1 != CL_SUCCESS || err2 != CL_SUCCESS) {
-		std::cerr << "failed to send data\n";
-		return 1;
+	// read file
+	size_t read_size, read_offset = 0;
+	int n;
+	fscanf(inFile, "%d", &n);
+	fgetc(inFile);
+	n = 0;
+	while (read_size = fread(fileBuf+read_offset, 1, input_size-read_offset, inFile)) {
+		n++;
+		read_size += read_offset;
+		if (n == 1) {
+			std::cout << "The second line is: \"";
+			for (int i = 0; i < 5; i++) std::cout.put(fileBuf[i]);
+			std::cout << "\"\n";
+		}
+		// split data
+		rangeArr[0] = 0;
+		int division = read_size / THREAD_COUNT;
+		for (int i = 1; i <= THREAD_COUNT; i++) {
+			// find newline
+			int pos = division * i;
+			while (pos > 0 && fileBuf[pos-1] != '\n') {
+				pos--;
+			}
+			rangeArr[i] = pos;
+		}
+		read_offset = read_size - rangeArr[THREAD_COUNT];
+
+		// send data
+		err1 = clEnqueueWriteBuffer(queue, str_cl, CL_TRUE, 0, read_size, fileBuf, 0, NULL, NULL);
+		err2 = clEnqueueWriteBuffer(queue, range_cl, CL_TRUE, 0, range_size, rangeArr, 0, NULL, NULL);
+		if (err1 != CL_SUCCESS || err2 != CL_SUCCESS) {
+			std::cerr << "failed to send data\n";
+			return 1;
+		}
+
+		// call kernel
+		clSetKernelArg(kernel, 0, sizeof(cl_mem), &str_cl);
+		clSetKernelArg(kernel, 1, sizeof(cl_mem), &range_cl);
+		clSetKernelArg(kernel, 2, sizeof(cl_mem), &his_cl);
+		size_t work_offset[1] = { 0 };
+		size_t work_size[1] = { THREAD_COUNT };
+		size_t local_size[1] = { 1 };
+		err1 = clEnqueueNDRangeKernel(
+			queue, kernel, 1, work_offset, work_size, local_size, 0, NULL, NULL
+		);
+		if (err1 != CL_SUCCESS) {
+			std::cerr << "failed to run kernel, or kernel crashed\n";
+			return 1;
+		}
+
+		// receive result
+		err1 = clEnqueueReadBuffer(queue, his_cl, CL_TRUE, 0, his_size, histogram_partial, 0, NULL, NULL);
+		if (err1 != CL_SUCCESS) {
+			std::cerr << "failed to read buffer\n";
+		}
+
+		// merge result
+		for (int i = 0; i < THREAD_COUNT; i++) {
+			for (int j = 0; j < 768; j++) {
+				histogram_results[j] += histogram_partial[i*768 + j];
+			}
+		}
+		memmove(fileBuf, fileBuf+read_size-read_offset, read_offset);
+		std::cout << "round " << n << " finished offset " << read_offset <<"\n";
+	}
+	// last line will be skipped
+	int off = 0;
+	for (int i = 0; i < read_offset; i++) {
+		int num = 0;
+		while (fileBuf[i] >= '0' && fileBuf[i] <= '9') {
+			num = num*10 + (fileBuf[i]-'0');
+			i++;
+		}
+		histogram_results[off<<8 | num]++;
+		off = (off+1)%3;
 	}
 
-	// call kernel
-	clSetKernelArg(kernel, 0, sizeof(cl_mem), &image_cl);
-	clSetKernelArg(kernel, 1, sizeof(unsigned int), &input_size);
-	clSetKernelArg(kernel, 2, sizeof(cl_mem), &his_cl);
-	size_t work_offset[1] = { 0 };
-	size_t work_size[1] = { 3 };
-	err1 = clEnqueueNDRangeKernel(
-		queue, kernel, 1, work_offset, work_size, NULL, 0, NULL, NULL
-	);
-	if (err1 != CL_SUCCESS) {
-		std::cerr << "failed to run kernel, or kernel crashed\n";
-		return 1;
-	}
-
-	// receive result
-	err1 = clEnqueueReadBuffer(queue, his_cl, CL_TRUE, 0, his_size, histogram_results, 0, NULL, NULL);
 	for(unsigned int i = 0; i < 256 * 3; ++i) {
 		if (i % 256 == 0 && i != 0)
 			outFile << std::endl;
 		outFile << histogram_results[i]<< ' ';
 	}
 
-	inFile.close();
+	fclose(inFile);
 	outFile.close();
 	return 0;
 }
