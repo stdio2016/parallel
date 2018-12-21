@@ -8,4 +8,7 @@ gen
 
 # test case
 input
+300M
+1200M
+2400M
 *.out
