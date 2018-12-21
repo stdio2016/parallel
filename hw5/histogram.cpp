@@ -5,13 +5,20 @@
 #include <iostream>
 
 #include <CL/cl.h>
-#define THREAD_COUNT 10
+#include <sys/time.h>
+#define THREAD_COUNT 250
 
 // OpenCL context
 cl_platform_id platform;
 cl_device_id device;
 cl_context context;
 cl_command_queue queue;
+
+long long Timer() {
+	struct timeval t;
+	gettimeofday(&t, NULL);
+	return t.tv_sec * 1000LL + t.tv_usec / 1000;
+}
 
 int initCL() {
 	// get platform
@@ -95,6 +102,8 @@ cl_program loadKernel(const char *name) {
 
 int main(int argc, char const *argv[])
 {
+	long long times[6] = { 0 };
+	long long t[6] = { Timer() };
 	// opencl init and load kernel
 	cl_int err1, err2, err3;
 	if (initCL() == false) exit(1);
@@ -113,7 +122,7 @@ int main(int argc, char const *argv[])
 	std::ofstream outFile("yyyyyy.out", std::ios_base::out);
 
 	// create buffer in host
-	size_t input_size = 1<<25;
+	size_t input_size = 1<<27;
 	size_t his_size = 256 * 3 * sizeof(unsigned int) * THREAD_COUNT;
 	char *fileBuf = new char[input_size];
 	unsigned int * histogram_partial = new unsigned int[256 * 3 * THREAD_COUNT];
@@ -129,6 +138,9 @@ int main(int argc, char const *argv[])
 		std::cerr << "failed to create buffer\n";
 		return 1;
 	}
+	t[1] = Timer();
+	std::cout << "initialize took " << t[1] - t[0] << " ms\n";
+	t[0] = t[1];
 
 	// read file
 	size_t read_size, read_offset = 0;
@@ -139,6 +151,7 @@ int main(int argc, char const *argv[])
 	while (read_size = fread(fileBuf+read_offset, 1, input_size-read_offset, inFile)) {
 		n++;
 		read_size += read_offset;
+		t[1] = Timer();
 		if (n == 1) {
 			std::cout << "The second line is: \"";
 			for (int i = 0; i < 5; i++) std::cout.put(fileBuf[i]);
@@ -156,6 +169,7 @@ int main(int argc, char const *argv[])
 			rangeArr[i] = pos;
 		}
 		read_offset = read_size - rangeArr[THREAD_COUNT];
+		t[2] = Timer();
 
 		// send data
 		err1 = clEnqueueWriteBuffer(queue, str_cl, CL_TRUE, 0, read_size, fileBuf, 0, NULL, NULL);
@@ -164,6 +178,7 @@ int main(int argc, char const *argv[])
 			std::cerr << "failed to send data\n";
 			return 1;
 		}
+		t[3] = Timer();
 
 		// call kernel
 		clSetKernelArg(kernel, 0, sizeof(cl_mem), &str_cl);
@@ -185,6 +200,7 @@ int main(int argc, char const *argv[])
 		if (err1 != CL_SUCCESS) {
 			std::cerr << "failed to read buffer\n";
 		}
+		t[4] = Timer();
 
 		// merge result
 		for (int i = 0; i < THREAD_COUNT; i++) {
@@ -194,6 +210,11 @@ int main(int argc, char const *argv[])
 		}
 		memmove(fileBuf, fileBuf+read_size-read_offset, read_offset);
 		std::cout << "round " << n << " finished offset " << read_offset <<"\n";
+
+		// profiling
+		for (int i = 0; i < 4; i++) times[i] += t[i+1] - t[i];
+		t[0] = Timer();
+		times[4] += t[0] - t[4];
 	}
 	// last line will be skipped
 	int off = 0;
@@ -206,6 +227,12 @@ int main(int argc, char const *argv[])
 		histogram_results[off<<8 | num]++;
 		off = (off+1)%3;
 	}
+	times[0] += Timer() - t[0];
+	std::cout << "read        took " << times[0] << " ms\n";
+	std::cout << "split       took " << times[1] << " ms\n";
+	std::cout << "send        took " << times[2] << " ms\n";
+	std::cout << "kernel&recv took " << times[3] << " ms\n";
+	std::cout << "merge       took " << times[4] << " ms\n";
 
 	for(unsigned int i = 0; i < 256 * 3; ++i) {
 		if (i % 256 == 0 && i != 0)
