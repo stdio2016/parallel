@@ -7,7 +7,12 @@ kernel void histogram(
 	global int *range,
 	global unsigned int *result)
 {
+	// private area for frequency distribution
+	// to decrease memory bandwidth usage
+	// using __private instead of __local will slow down the kernel. I don't know why
 	local unsigned int count[HIST_SIZE];
+
+	// cannot initialize a __local array with {0}, so initialize here
 	for (int i = 0; i < HIST_SIZE; i++) count[i] = 0;
 
 	// get my work range
@@ -17,6 +22,12 @@ kernel void histogram(
 	int end = range[id+1];
 
 	// parse number in GPU!
+	// actually it can only parse /(\d{1,3} \d{1,3} \d{1,3}\n)+/
+	// meaning that:
+	//   1. no leading spaces, no trailing spaces.
+	//   2. there should be exactly 3 numbers in each line.
+	//   3. in each line, numbers are separated by exactly 1 space.
+	//   4. every number must be between 0 and 255 and have at most 3 digits.
 	for (int i = start; i < end; ) {
 		// red part
 		int num, ch;
@@ -65,6 +76,7 @@ kernel void histogram(
 		++count[BLUE+num];
 	}
 
+	// write result to global memory
 	for (int i = 0; i < HIST_SIZE; i++) {
 		result[id * HIST_SIZE + i] = count[i];
 	}
