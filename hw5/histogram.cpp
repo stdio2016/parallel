@@ -89,7 +89,7 @@ cl_program loadKernel(const char *name) {
 		std::cerr << "cannot create program \"" << name << "\"\n";
 		return 0;
 	}
-	err = clBuildProgram(prog, 0, NULL, "", NULL, NULL);
+	err = clBuildProgram(prog, 0, NULL, "-cl-std=CL2.0", NULL, NULL);
 	if (err != CL_SUCCESS) {
 		std::cerr << "program \"" << name << "\" has errors:\n";
 		size_t len;
@@ -146,17 +146,19 @@ int main(int argc, char const *argv[])
 	// create buffer in host
 	size_t input_size = 1<<27;
 	size_t his_size = 256 * 3 * sizeof(unsigned int) * THREAD_COUNT;
-	char *fileBuf = new char[input_size];
+	char *fileBuf1 = (char *) clSVMAlloc(context, CL_MEM_READ_WRITE, input_size, 0);
+	char *fileBuf2 = (char *) clSVMAlloc(context, CL_MEM_READ_WRITE, input_size, 0);
+	char *fileBuf[2] = {fileBuf1, fileBuf2};
 	unsigned int * histogram_partial = new unsigned int[256 * 3 * THREAD_COUNT];
 	unsigned int * histogram_results = (unsigned int *) calloc(sizeof(int[256 * 3]), 1);
 	size_t range_size = sizeof(int[THREAD_COUNT+1]);
 	int *rangeArr = new int[THREAD_COUNT+1];
 
 	// create buffer in device
-	str_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, input_size, NULL, &err1);
+	//str_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, input_size, NULL, &err1);
 	his_cl = clCreateBuffer(context, CL_MEM_WRITE_ONLY, his_size, NULL, &err2);
 	range_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, range_size, NULL, &err3);
-	if (err1 != CL_SUCCESS || err2 != CL_SUCCESS || err3 != CL_SUCCESS) {
+	if (err2 != CL_SUCCESS || err3 != CL_SUCCESS) {
 		std::cerr << "failed to create buffer\n";
 		return 1;
 	}
@@ -171,39 +173,42 @@ int main(int argc, char const *argv[])
 	fscanf(inFile, "%d", &n);
 	fgetc(inFile);
 	n = 0;
-	while (read_size = fread(fileBuf+read_offset, 1, input_size-read_offset, inFile)) {
-		n++;
-		read_size += read_offset;
-		t[1] = Timer();
-		if (n == 1) {
-			std::cout << "The second line is: \"";
-			for (int i = 0; i < 5; i++) std::cout.put(fileBuf[i]);
-			std::cout << "\"\n";
-		}
+	clEnqueueSVMMap(queue, CL_TRUE, CL_MAP_WRITE, fileBuf1, input_size, 0, NULL, NULL);
+	read_size = fread(fileBuf1+read_offset, 1, input_size-read_offset, inFile);
+	t[2] = Timer();
+	times[2] = t[2] - t[1];
+	t[0] = t[2];
+	while (read_size > 0) {
+		char *str = fileBuf[n%2];
+		char *str2 = fileBuf[(n+1)%2];
 		// split data
+		read_size += read_offset;
 		rangeArr[0] = 0;
 		int division = read_size / THREAD_COUNT;
 		for (int i = 1; i <= THREAD_COUNT; i++) {
 			// find newline
 			int pos = division * i;
-			while (pos > 0 && fileBuf[pos-1] != '\n') {
+			while (pos > 0 && str[pos-1] != '\n') {
 				pos--;
 			}
 			rangeArr[i] = pos;
 		}
 		read_offset = read_size - rangeArr[THREAD_COUNT];
-		t[2] = Timer();
+		clEnqueueSVMMap(queue, CL_TRUE, CL_MAP_WRITE_INVALIDATE_REGION, str2, input_size, 0, NULL, NULL);
+		memmove(str2, str+read_size-read_offset, read_offset);
+		t[1] = Timer();
 
 		// send data
-		err1 = clEnqueueWriteBuffer(queue, str_cl, CL_TRUE, 0, read_size, fileBuf, 0, NULL, NULL);
+		//err1 = clEnqueueWriteBuffer(queue, str_cl, CL_TRUE, 0, read_size, fileBuf, 0, NULL, NULL);
+		err1 = clEnqueueSVMUnmap(queue, str, 0, NULL, NULL);
 		err2 = clEnqueueWriteBuffer(queue, range_cl, CL_TRUE, 0, range_size, rangeArr, 0, NULL, NULL);
 		if (err1 != CL_SUCCESS || err2 != CL_SUCCESS) {
 			std::cerr << "failed to send data\n";
 		}
-		t[3] = Timer();
+		t[2] = Timer();
 
 		// call kernel
-		clSetKernelArg(kernel, 0, sizeof(cl_mem), &str_cl);
+		clSetKernelArgSVMPointer(kernel, 0, str);
 		clSetKernelArg(kernel, 1, sizeof(cl_mem), &range_cl);
 		clSetKernelArg(kernel, 2, sizeof(cl_mem), &his_cl);
 		size_t work_offset[1] = { 0 };
@@ -215,6 +220,10 @@ int main(int argc, char const *argv[])
 		if (err1 != CL_SUCCESS) {
 			std::cerr << "failed to start kernel\n";
 		}
+
+		// read file
+		read_size = fread(str2+read_offset, 1, input_size-read_offset, inFile);
+		t[3] = Timer();
 		clFinish(queue);
 		t[4] = Timer();
 
@@ -231,30 +240,31 @@ int main(int argc, char const *argv[])
 				histogram_results[j] += histogram_partial[i*768 + j];
 			}
 		}
-		memmove(fileBuf, fileBuf+read_size-read_offset, read_offset);
 		std::cout << "round " << n << " finished offset " << read_offset <<"\n";
 
 		// profiling
 		for (int i = 0; i < 5; i++) times[i] += t[i+1] - t[i];
 		t[0] = Timer();
-		times[4] += t[0] - t[5];
+		times[5] += t[0] - t[5];
+		n++;
 	}
+	char *str = fileBuf[n%2];
 	// last line will be skipped
 	int off = 0;
 	for (int i = 0; i < read_offset; i++) {
 		int num = 0;
-		while (fileBuf[i] >= '0' && fileBuf[i] <= '9') {
-			num = num*10 + (fileBuf[i]-'0');
+		while (str[i] >= '0' && str[i] <= '9') {
+			num = num*10 + (str[i]-'0');
 			i++;
 		}
 		histogram_results[off<<8 | num]++;
 		off = (off+1)%3;
 	}
 	times[0] += Timer() - t[0];
-	std::cout << "read   took " << times[0] << " ms\n";
-	std::cout << "split  took " << times[1] << " ms\n";
-	std::cout << "send   took " << times[2] << " ms\n";
-	std::cout << "kernel took " << times[3] << " ms\n";
+	std::cout << "read   took " << times[2] << " ms\n";
+	std::cout << "split  took " << times[0] << " ms\n";
+	std::cout << "send   took " << times[1] << " ms\n";
+	std::cout << "kernel took " << (times[2]+times[3]) << " ms\n";
 	std::cout << "recv   took " << times[4] << " ms\n";
 	std::cout << "merge  took " << times[5] << " ms\n";
 
