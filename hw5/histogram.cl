@@ -28,6 +28,7 @@ kernel void histogram(
 	//   2. there should be exactly 3 numbers in each line.
 	//   3. in each line, numbers are separated by exactly 1 space.
 	//   4. every number must be between 0 and 255 and have at most 3 digits.
+	//   5. numbers are unsigned integer.
 	for (int i = start; i < end; ) {
 		// red part
 		int num, ch;

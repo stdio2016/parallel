@@ -16,7 +16,8 @@ cl_context context;
 cl_command_queue queue;
 cl_program program;
 cl_kernel kernel;
-cl_mem str_cl, his_cl, range_cl;
+cl_mem his_cl, range_cl;
+char *fileBuf1, *fileBuf2;
 
 long long Timer() {
 	struct timeval t;
@@ -108,12 +109,11 @@ cl_program loadKernel(const char *name) {
 }
 
 void release() {
-	if (good >= 4) {
-		if (str_cl) clReleaseMemObject(str_cl);
-		if (his_cl) clReleaseMemObject(his_cl);
-		if (range_cl) clReleaseMemObject(range_cl);
-		clReleaseKernel(kernel);
-	}
+	if (good >= 8) clReleaseMemObject(range_cl);
+	if (good >= 7) clReleaseMemObject(his_cl);
+	if (good >= 6) clSVMFree(context, fileBuf2);
+	if (good >= 5) clSVMFree(context, fileBuf1);
+	if (good >= 4) clReleaseKernel(kernel);
 	if (good >= 3) clReleaseProgram(program);
 	if (good >= 2) clReleaseCommandQueue(queue);
 	if (good >= 1) clReleaseContext(context);
@@ -145,39 +145,45 @@ int main(int argc, char const *argv[])
 
 	// create buffer in host
 	size_t input_size = 1<<27;
-	size_t his_size = 256 * 3 * sizeof(unsigned int) * THREAD_COUNT;
-	char *fileBuf1 = (char *) clSVMAlloc(context, CL_MEM_READ_WRITE, input_size, 0);
-	char *fileBuf2 = (char *) clSVMAlloc(context, CL_MEM_READ_WRITE, input_size, 0);
+	fileBuf1 = (char *) clSVMAlloc(context, CL_MEM_READ_WRITE, input_size, 0);
+	if (fileBuf1 == NULL) { std::cerr << "failed to create shared buffer 1\n"; return 1; }
+	good = 5;
+	fileBuf2 = (char *) clSVMAlloc(context, CL_MEM_READ_WRITE, input_size, 0);
+	if (fileBuf2 == NULL) { std::cerr << "failed to create shared buffer 2\n"; return 1; }
+	good = 6;
 	char *fileBuf[2] = {fileBuf1, fileBuf2};
+
+	size_t his_size = 256 * 3 * sizeof(unsigned int) * THREAD_COUNT;
 	unsigned int * histogram_partial = new unsigned int[256 * 3 * THREAD_COUNT];
 	unsigned int * histogram_results = (unsigned int *) calloc(sizeof(int[256 * 3]), 1);
+
 	size_t range_size = sizeof(int[THREAD_COUNT+1]);
 	int *rangeArr = new int[THREAD_COUNT+1];
 
 	// create buffer in device
-	//str_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, input_size, NULL, &err1);
 	his_cl = clCreateBuffer(context, CL_MEM_WRITE_ONLY, his_size, NULL, &err2);
+	if (err2 != CL_SUCCESS) { std::cerr << "failed to create histogram buffer\n"; return 1; }
+	good = 7;
+
 	range_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, range_size, NULL, &err3);
-	if (err2 != CL_SUCCESS || err3 != CL_SUCCESS) {
-		std::cerr << "failed to create buffer\n";
-		return 1;
-	}
-	good = 5;
+	if (err3 != CL_SUCCESS) { std::cerr << "failed to create range buffer\n"; return 1; }
+	good = 8;
+
 	t[1] = Timer();
 	std::cout << "initialize took " << t[1] - t[0] << " ms\n";
-	t[0] = t[1];
 
 	// read file
 	size_t read_size, read_offset = 0;
-	int n;
+	int n; // no. of rounds
+	// skip first line
 	fscanf(inFile, "%d", &n);
 	fgetc(inFile);
 	n = 0;
+	// read second line
 	clEnqueueSVMMap(queue, CL_TRUE, CL_MAP_WRITE, fileBuf1, input_size, 0, NULL, NULL);
 	read_size = fread(fileBuf1+read_offset, 1, input_size-read_offset, inFile);
-	t[2] = Timer();
-	times[2] = t[2] - t[1];
-	t[0] = t[2];
+	t[0] = Timer();
+	times[2] = t[0] - t[1];
 	while (read_size > 0) {
 		char *str = fileBuf[n%2];
 		char *str2 = fileBuf[(n+1)%2];
@@ -199,7 +205,6 @@ int main(int argc, char const *argv[])
 		t[1] = Timer();
 
 		// send data
-		//err1 = clEnqueueWriteBuffer(queue, str_cl, CL_TRUE, 0, read_size, fileBuf, 0, NULL, NULL);
 		err1 = clEnqueueSVMUnmap(queue, str, 0, NULL, NULL);
 		err2 = clEnqueueWriteBuffer(queue, range_cl, CL_TRUE, 0, range_size, rangeArr, 0, NULL, NULL);
 		if (err1 != CL_SUCCESS || err2 != CL_SUCCESS) {
@@ -207,7 +212,7 @@ int main(int argc, char const *argv[])
 		}
 		t[2] = Timer();
 
-		// call kernel
+		// launch kernel
 		clSetKernelArgSVMPointer(kernel, 0, str);
 		clSetKernelArg(kernel, 1, sizeof(cl_mem), &range_cl);
 		clSetKernelArg(kernel, 2, sizeof(cl_mem), &his_cl);
@@ -224,6 +229,7 @@ int main(int argc, char const *argv[])
 		// read file
 		read_size = fread(str2+read_offset, 1, input_size-read_offset, inFile);
 		t[3] = Timer();
+		// wait for kernel to finish
 		clFinish(queue);
 		t[4] = Timer();
 
@@ -249,7 +255,7 @@ int main(int argc, char const *argv[])
 		n++;
 	}
 	char *str = fileBuf[n%2];
-	// last line will be skipped
+	// last line will be skipped, so compute here
 	int off = 0;
 	for (int i = 0; i < read_offset; i++) {
 		int num = 0;
