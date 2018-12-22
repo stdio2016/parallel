@@ -9,10 +9,14 @@
 #define THREAD_COUNT 250
 
 // OpenCL context
+int good = 0;
 cl_platform_id platform;
 cl_device_id device;
 cl_context context;
 cl_command_queue queue;
+cl_program program;
+cl_kernel kernel;
+cl_mem str_cl, his_cl, range_cl;
 
 long long Timer() {
 	struct timeval t;
@@ -44,6 +48,7 @@ int initCL() {
 		std::cerr << "unable to create context\n";
 		return 0;
 	}
+	good = 1;
 
 	// create command queue
 	queue = clCreateCommandQueueWithProperties(context, device, NULL, &err);
@@ -51,6 +56,7 @@ int initCL() {
 		std::cerr << "unable to create command queue\n";
 		return 0;
 	}
+	good = 2;
 	return 1;
 }
 
@@ -95,27 +101,43 @@ cl_program loadKernel(const char *name) {
 			std::cerr << code << "\n";
 		}
 		delete [] code;
+		clReleaseProgram(prog);
 		return 0;
 	}
 	return prog;
 }
 
+void release() {
+	if (good >= 4) {
+		if (str_cl) clReleaseMemObject(str_cl);
+		if (his_cl) clReleaseMemObject(his_cl);
+		if (range_cl) clReleaseMemObject(range_cl);
+		clReleaseKernel(kernel);
+	}
+	if (good >= 3) clReleaseProgram(program);
+	if (good >= 2) clReleaseCommandQueue(queue);
+	if (good >= 1) clReleaseContext(context);
+}
+
 int main(int argc, char const *argv[])
 {
+	atexit(release);
 	long long times[6] = { 0 };
 	long long t[6] = { Timer() };
 	// opencl init and load kernel
 	cl_int err1, err2, err3;
 	if (initCL() == false) exit(1);
-	cl_program histogramProg = loadKernel("histogram.cl");
-	if (histogramProg == 0) {
+	program = loadKernel("histogram.cl");
+	if (program == 0) {
 		return 1;
 	}
-	cl_kernel kernel = clCreateKernel(histogramProg, "histogram", &err1);
+	good = 3;
+	kernel = clCreateKernel(program, "histogram", &err1);
 	if (err1 != CL_SUCCESS) {
 		std::cerr << "unable to create kernel\n";
 		return 1;
 	}
+	good = 4;
 
 	// open file
 	FILE *inFile = fopen("input", "rb");
@@ -131,13 +153,14 @@ int main(int argc, char const *argv[])
 	int *rangeArr = new int[THREAD_COUNT+1];
 
 	// create buffer in device
-	cl_mem str_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, input_size, NULL, &err1);
-	cl_mem his_cl = clCreateBuffer(context, CL_MEM_WRITE_ONLY, his_size, NULL, &err2);
-	cl_mem range_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, range_size, NULL, &err3);
-	if (err1 != CL_SUCCESS || err2 != CL_SUCCESS) {
+	str_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, input_size, NULL, &err1);
+	his_cl = clCreateBuffer(context, CL_MEM_WRITE_ONLY, his_size, NULL, &err2);
+	range_cl = clCreateBuffer(context, CL_MEM_READ_ONLY, range_size, NULL, &err3);
+	if (err1 != CL_SUCCESS || err2 != CL_SUCCESS || err3 != CL_SUCCESS) {
 		std::cerr << "failed to create buffer\n";
 		return 1;
 	}
+	good = 5;
 	t[1] = Timer();
 	std::cout << "initialize took " << t[1] - t[0] << " ms\n";
 	t[0] = t[1];
@@ -176,7 +199,6 @@ int main(int argc, char const *argv[])
 		err2 = clEnqueueWriteBuffer(queue, range_cl, CL_TRUE, 0, range_size, rangeArr, 0, NULL, NULL);
 		if (err1 != CL_SUCCESS || err2 != CL_SUCCESS) {
 			std::cerr << "failed to send data\n";
-			return 1;
 		}
 		t[3] = Timer();
 
@@ -191,16 +213,17 @@ int main(int argc, char const *argv[])
 			queue, kernel, 1, work_offset, work_size, local_size, 0, NULL, NULL
 		);
 		if (err1 != CL_SUCCESS) {
-			std::cerr << "failed to run kernel, or kernel crashed\n";
-			return 1;
+			std::cerr << "failed to start kernel\n";
 		}
+		clFinish(queue);
+		t[4] = Timer();
 
 		// receive result
 		err1 = clEnqueueReadBuffer(queue, his_cl, CL_TRUE, 0, his_size, histogram_partial, 0, NULL, NULL);
 		if (err1 != CL_SUCCESS) {
 			std::cerr << "failed to read buffer\n";
 		}
-		t[4] = Timer();
+		t[5] = Timer();
 
 		// merge result
 		for (int i = 0; i < THREAD_COUNT; i++) {
@@ -212,9 +235,9 @@ int main(int argc, char const *argv[])
 		std::cout << "round " << n << " finished offset " << read_offset <<"\n";
 
 		// profiling
-		for (int i = 0; i < 4; i++) times[i] += t[i+1] - t[i];
+		for (int i = 0; i < 5; i++) times[i] += t[i+1] - t[i];
 		t[0] = Timer();
-		times[4] += t[0] - t[4];
+		times[4] += t[0] - t[5];
 	}
 	// last line will be skipped
 	int off = 0;
@@ -228,11 +251,12 @@ int main(int argc, char const *argv[])
 		off = (off+1)%3;
 	}
 	times[0] += Timer() - t[0];
-	std::cout << "read        took " << times[0] << " ms\n";
-	std::cout << "split       took " << times[1] << " ms\n";
-	std::cout << "send        took " << times[2] << " ms\n";
-	std::cout << "kernel&recv took " << times[3] << " ms\n";
-	std::cout << "merge       took " << times[4] << " ms\n";
+	std::cout << "read   took " << times[0] << " ms\n";
+	std::cout << "split  took " << times[1] << " ms\n";
+	std::cout << "send   took " << times[2] << " ms\n";
+	std::cout << "kernel took " << times[3] << " ms\n";
+	std::cout << "recv   took " << times[4] << " ms\n";
+	std::cout << "merge  took " << times[5] << " ms\n";
 
 	for(unsigned int i = 0; i < 256 * 3; ++i) {
 		if (i % 256 == 0 && i != 0)
