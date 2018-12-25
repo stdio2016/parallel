@@ -26,18 +26,19 @@ int DLXSolver::minfit(MatrixColumn **result) {
 }
 
 int DLXSolver::dlx() {
-  while (tried != maxTry) {
+  if (ended) return 0;
+  while (tried != maxTry && solCount != maxSol) {
     tried++;
     MatrixColumn *c;
     MatrixCell *n;
     int has = minfit(&c);
     int rrc = removedRowCount;
-    if (lv > maxLv || has == -2) {
+    if (lv >= maxLv || has == -2) {
       showSolution();
       has = -1;
     }
     if (has == -1) {
-      if (lv == 0) return 0;
+      if (lv <= minLv) { ended = true; return solCount == maxSol; }
       --lv;
       n = stack[lv].n;
       c = stack[lv].c;
@@ -59,7 +60,7 @@ int DLXSolver::dlx() {
       }
 
       // pop stack
-      if (lv == 0) return 0;
+      if (lv <= minLv) { ended = true; return solCount == maxSol; }
       --lv;
       n = stack[lv].n;
       c = stack[lv].c;
@@ -83,10 +84,19 @@ int DLXSolver::dlx() {
 }
 
 void DLXSolver::showSolution() {
-  /*for (int i = 0; i < lv; i++) {
-    printf("%d ", stack[i].n->row);
+  if (solCount >= solutions.size()-1) {
+    solutions.push_back(solutions[solCount] + lv);
   }
-  puts("");*/
+  else {
+    solutions[solCount+1] = solutions[solCount] + lv;
+  }
+  int from = solutions[solCount];
+  if (solRows.size() < from + lv) {
+    solRows.resize(from+lv);
+  }
+  for (int i = 0; i < lv; i++) {
+    solRows[from+i] = stack[i].n->row;
+  }
   solCount++;
 }
 
@@ -102,4 +112,36 @@ void DLXSolver::setRowCount(int n) {
 void DLXSolver::setRoot(MatrixColumn *node) {
   root = node;
   root->min = root->max = 0;
+}
+
+void DLXSolver::enterBranch(int row) {
+  MatrixColumn *c;
+  MatrixCell *n;
+  int has = minfit(&c);
+  int rrc = removedRowCount;
+  n = c->down;
+  while (n->row != row) {
+    removedRow[removedRowCount++] = n;
+    unlinkRow(n, true);
+    n = n->down;
+  }
+  removedRow[removedRowCount++] = n;
+  StackFrame sf = {n, c, rrc};
+  stack[lv] = sf;
+  lv++;
+  //puts("enter");
+  cover(n);
+}
+
+void DLXSolver::leaveBranch() {
+  --lv;
+  MatrixCell *n = stack[lv].n;
+  int rrc = stack[lv].choice;
+
+  // recover
+  uncover(n);
+
+  while (removedRowCount > rrc) {
+    relinkRow(removedRow[--removedRowCount], true);
+  }
 }

@@ -40,8 +40,8 @@ struct MatrixColumn : MatrixCell {
 
 struct DLXSolver {
   long long tried, maxTry;
-  int solCount;
-  int lv, maxLv;
+  int solCount, maxSol;
+  int lv, maxLv, minLv;
   MatrixColumn *root;
   struct StackFrame {
     MatrixCell *n;
@@ -51,6 +51,9 @@ struct DLXSolver {
   std::vector<StackFrame> stack;
   int removedRowCount;
   std::vector<MatrixCell *> removedRow;
+  std::vector<int> solutions;
+  std::vector<int> solRows;
+  bool ended;
 
   int dlx();
   void showSolution();
@@ -58,9 +61,12 @@ struct DLXSolver {
   DLXSolver() {
     tried = maxTry = 0;
     solCount = 0;
-    lv = maxLv = 0;
+    solutions.push_back(0);
+    maxSol = -1;
+    lv = maxLv = minLv = 0;
     root = NULL;
     removedRowCount = 0;
+    ended = false;
   }
   void setMaxLv(int n);
   int minfit(MatrixColumn **result);
@@ -71,6 +77,9 @@ struct DLXSolver {
   void relinkRow(MatrixCell *n, bool includeN);
   void cover(MatrixCell *n);
   void uncover(MatrixCell *n);
+  
+  void enterBranch(int index);
+  void leaveBranch();
 };
 
 inline void DLXSolver::unlinkRow(MatrixCell *n, bool includeN) {
