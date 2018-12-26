@@ -56,27 +56,13 @@ int main(int argc, char *argv[]) {
   if (Proc_rank == 0) {
     d.maxSol = 1;
     d.setMaxLv(maxDepth);
-    int i;
-    int more;
+    int i = Proc_size;
     int total = 0;
-    for (i = 1; i < Proc_size && (more = d.dlx()); i++) {
-      for (int j = 0; j < d.solutions[1]; j++) {
-        rows[j] = d.solRows[j];
-      }
-      MPI_Send(rows, d.solutions[1], MPI_INT, i, 0, MPI_COMM_WORLD);
-      d.solCount = 0;
-    }
-    if (!more) {
-      // too many processes
-      for (int j = i; j < Proc_size; j++) {
-        MPI_Send(NULL, 0, MPI_INT, j, 0, MPI_COMM_WORLD);
-      }
-    }
-    while (more || i > 1) {
+    while (i > 1) {
       int ans;
       MPI_Recv(&ans, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
       total += ans;
-      more = d.dlx();
+      int more = d.dlx();
       if (more) {
         for (int j = 0; j < d.solutions[1]; j++) {
           rows[j] = d.solRows[j];
@@ -92,11 +78,9 @@ int main(int argc, char *argv[]) {
     cout << "solution count: " << total << "\n";
   }
   else {
-    char name[100];
-    sprintf(name, "out%d.txt", Proc_rank);
-    std::ofstream fout(name);
-    MPI_Recv(rows, rowCount, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
     int actualLen;
+    MPI_Send(&d.solCount, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    MPI_Recv(rows, rowCount, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
     MPI_Get_count(&status, MPI_INT, &actualLen);
     while (actualLen > 0) {
       for (int i = 0; i < actualLen; i++) {
