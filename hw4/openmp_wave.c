@@ -103,7 +103,7 @@ void update()
    const int BLOCK = 16;
 
    /* swapping i and j index will make program slow */
-   #pragma omp parallel for schedule(static)
+   #pragma omp parallel for schedule(static) private(i, j)
    for (k = 0; k <= tpoints/BLOCK; k++) {
       /* slice range */
       int lo = k * BLOCK + 1;
