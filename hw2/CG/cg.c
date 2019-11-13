@@ -41,6 +41,14 @@ static double tran;
 
 /* common /timers/ */
 static logical timeron;
+
+#ifdef CAN_CHANGE_ALGORITHM
+static int brow[NA+2];
+static int bcol[NAZ];
+static double belt[NAZ];
+static double pa[NA+2];
+static double ra[NA+2];
+#endif // CAN_CHANGE_ALGORITHM
 //---------------------------------------------------------------------
 
 
@@ -352,6 +360,25 @@ static void conj_grad(int colidx[],
     //       The unrolled-by-8 version below is significantly faster
     //       on the Cray t3d - overall speed of code is 1.5 times faster.
 
+#ifdef CAN_CHANGE_ALGORITHM
+    #pragma omp parallel for private(sum, k)
+    for (j = 0; j < lastrow - firstrow + 1; j++) {
+      sum = 0.0;
+      for (k = (NONZER+1)*j; k < (NONZER+1)*j + arow[j]; k++) {
+        sum = sum + aelt[k]*p[acol[k]];
+      }
+      pa[j] = sum * ra[j];
+    }
+
+    #pragma omp parallel for private(sum, k)
+    for (j = 0; j < lastrow - firstrow + 1; j++) {
+      sum = 0.0;
+      for (k = brow[j]; k < brow[j+1]; k++) {
+        sum = sum + belt[k]*pa[bcol[k]];
+      }
+      q[j] = sum + p[j] * (RCOND - SHIFT);
+    }
+#else // normal way 
     #pragma omp parallel for private(sum, k)
     for (j = 0; j < lastrow - firstrow + 1; j++) {
       sum = 0.0;
@@ -418,6 +445,7 @@ static void conj_grad(int colidx[],
       }
       q[j] = sum;
     }
+#endif // CAN_CHANGE_ALGORITHM
 
     //---------------------------------------------------------------------
     // Obtain p.q
@@ -577,6 +605,33 @@ static void makea(int n,
   sparse(a, colidx, rowstr, n, nz, NONZER, arow, acol, 
          aelt, firstrow, lastrow,
          iv, RCOND, SHIFT);
+
+#ifdef CAN_CHANGE_ALGORITHM
+  // transpose A matrix
+  for (iouter = 0; iouter < n+1; iouter++) {
+    brow[iouter] = 0;
+  }
+  for (iouter = 0; iouter < n; iouter++) {
+    for (ivelt = 0; ivelt < arow[iouter]; ivelt++) {
+      brow[acol[iouter][ivelt] + 1] += 1;
+    }
+  }
+  for (iouter = 0; iouter < n; iouter++) {
+    brow[iouter+1] = brow[iouter] + brow[iouter+1];
+  }
+  for (iouter = 0; iouter < n; iouter++) {
+    for (ivelt = 0; ivelt < arow[iouter]; ivelt++) {
+      nzv = acol[iouter][ivelt];
+      bcol[brow[nzv]] = iouter;
+      belt[brow[nzv]] = aelt[iouter][ivelt];
+      brow[nzv] += 1;
+    }
+  }
+  for (iouter = n; iouter > 0; iouter--) {
+    brow[iouter] = brow[iouter-1];
+  }
+  brow[0] = 0;
+#endif // CAN_CHANGE_ALGORITHM
 }
 
 
@@ -662,6 +717,10 @@ static void sparse(double a[],
   ratio = pow(rcond, (1.0 / (double)(n)));
 
   for (i = 0; i < n; i++) {
+#ifdef CAN_CHANGE_ALGORITHM
+    // save scale
+    ra[i] = size;
+#endif // CAN_CHANGE_ALGORITHM
     for (nza = 0; nza < arow[i]; nza++) {
       j = acol[i][nza];
 
