@@ -1,12 +1,31 @@
+// to compile on Windows, use nvcc histogram.cpp OpenCL.lib
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
 #include <fstream>
 #include <iostream>
 
-#include <CL/cl.h>
+#include <CL/opencl.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/time.h>
+#endif
 #define THREAD_COUNT 250
+
+#if defined(__NVCC__) && CL_VERSION_1_2 && !CL_VERSION_2_0
+#pragma message ("Nvidia only has evaluation support of OpenCL 2.0. Use at your own risk!")
+extern "C" {
+	typedef cl_bitfield cl_svm_mem_flags;
+	typedef cl_bitfield cl_queue_properties;
+	void clSVMFree(cl_context, void *);
+	void *clSVMAlloc(cl_context, cl_svm_mem_flags, size_t, unsigned int);
+	cl_command_queue clCreateCommandQueueWithProperties(cl_context, cl_device_id, const cl_queue_properties *, cl_int *);
+	cl_int clEnqueueSVMMap(cl_command_queue, cl_bool, cl_map_flags, void *, size_t, cl_uint, const cl_event *, cl_event *);
+	cl_int clEnqueueSVMUnmap(cl_command_queue, void *, cl_uint, const cl_event *, cl_event *);
+	cl_int clSetKernelArgSVMPointer(cl_kernel, cl_uint, const void *);
+}
+#endif
 
 // OpenCL context
 int good = 0;
@@ -20,9 +39,17 @@ cl_mem his_cl, range_cl;
 char *fileBuf1, *fileBuf2;
 
 long long Timer() {
+#ifdef _WIN32
+	LARGE_INTEGER t, f;
+	if (QueryPerformanceFrequency(&f) && QueryPerformanceCounter(&t)) {
+		return t.QuadPart / (f.QuadPart / 1000);
+	}
+	return 0;
+#else
 	struct timeval t;
 	gettimeofday(&t, NULL);
 	return t.tv_sec * 1000LL + t.tv_usec / 1000;
+#endif
 }
 
 int initCL() {
@@ -62,7 +89,7 @@ int initCL() {
 }
 
 cl_program loadKernel(const char *name) {
-	std::ifstream f(name, std::ios_base::in);
+	std::ifstream f(name, std::ios_base::in | std::ios_base::binary);
 	if (!f) {
 		std::cerr << "program \"" << name << "\" not found\n";
 		return 0;
@@ -78,8 +105,9 @@ cl_program loadKernel(const char *name) {
 	f.seekg(0, std::ios_base::beg);
 
 	// read file
-	char *code = new char[len];
+	char *code = new char[len + 1];
 	f.read(code, len);
+	code[len] = 0;
 	const char *codes = &code[0];
 
 	// compile program
