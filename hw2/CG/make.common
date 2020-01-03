@@ -11,6 +11,7 @@ UCC	= gcc
 BINDIR	= bin
 RAND   = randdp
 WTIME  = wtime.c
+o = -o
 
 PROGRAM  = $(BINDIR)/$(PROGRAMNAME)
 CCOMPILE = $(CC)  -c $(C_INC) $(CFLAGS)
@@ -28,7 +29,7 @@ default:: ${PROGRAM}
 config:
 COMMON=common
 ${COMMON}/${RAND}.o: ${COMMON}/${RAND}.c
-	cd ${COMMON}; ${CCOMPILE} ${RAND}.c
+	cd ${COMMON}; ${CCOMPILE} ${RAND}.c $(o)${RAND}.o
 
 #${COMMON}/print_results.o: ${COMMON}/print_results.c
 #	cd ${COMMON}; ${CCOMPILE} print_results.c
@@ -37,20 +38,20 @@ ${COMMON}/${RAND}.o: ${COMMON}/${RAND}.c
 #	cd ${COMMON}; ${CCOMPILE} c_print_results.c
 
 ${COMMON}/timers.o: ${COMMON}/timers.c
-	cd ${COMMON}; ${CCOMPILE} timers.c
+	cd ${COMMON}; ${CCOMPILE} timers.c $(o)timers.o
 
 ${COMMON}/c_timers.o: ${COMMON}/c_timers.c
-	cd ${COMMON}; ${CCOMPILE} c_timers.c
+	cd ${COMMON}; ${CCOMPILE} c_timers.c $(o)c_timers.o
 
 ${COMMON}/wtime.o: ${COMMON}/${WTIME}
-	cd ${COMMON}; ${CCOMPILE} ${MACHINE} -o wtime.o ${WTIME}
+	cd ${COMMON}; ${CCOMPILE} ${MACHINE} $(o)wtime.o ${WTIME}
 # For most machines or CRAY or IBM
 #	cd ${COMMON}; ${CCOMPILE} ${MACHINE} ${COMMON}/wtime.c
 # For a precise timer on an SGI Power Challenge, try:
 #	cd ${COMMON}; ${CCOMPILE} -o wtime.o ${COMMON}/wtime_sgi64.c
 
 ${COMMON}/c_wtime.o: ${COMMON}/${WTIME}
-	cd ${COMMON}; ${CCOMPILE} -o c_wtime.o ${WTIME}
+	cd ${COMMON}; ${CCOMPILE} $(o) c_wtime.o ${WTIME}
 
 # So that "make benchmark-name" works
 ${BENCHMARK}:  default

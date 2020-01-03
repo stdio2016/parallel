@@ -400,8 +400,8 @@ static void conj_grad(int colidx[],
         __m128d s2 = _mm_setzero_pd();
         __m128d p1,p2,a1,a2,r1,r2;
         for (k=k+8; k < km; k+=8) {
-          _mm_prefetch(&colidx[k], _MM_HINT_NTA);
-          _mm_prefetch(&a[k], _MM_HINT_NTA);
+          _mm_prefetch((void*)&colidx[k], _MM_HINT_NTA);
+          _mm_prefetch((void*)&a[k], _MM_HINT_NTA);
           p1 = _mm_load_sd(p+colidx[k]);
           p2 = _mm_load_sd(p+colidx[k+2]);
           a1 = _mm_load_pd(a+k);

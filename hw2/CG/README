@@ -12,3 +12,6 @@ Build up:
 
 Check correctness:
     Main function contains verification information, it will show VERIFICATION SUCCESSFUL/FAILED to indicate the correctness of the program.
+
+compile on windows with visual studio:
+    make CC=cl "o=/Fo" "CFLAGS=""/DEBUG /O2 /openmp""" "CLINKFLAGS=""/O2 /openmp""" C_LIB= DATASIZE=[LARGE|MEDIUMN|SMALL]

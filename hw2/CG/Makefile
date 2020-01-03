@@ -13,10 +13,10 @@ OBJS = cg.o \
 
 ${PROGRAM}: config ${OBJS}
 	mkdir -p ./bin
-	${CLINK} ${CLINKFLAGS} -o ${PROGRAM} ${OBJS} ${C_LIB}
+	${CLINK} ${CLINKFLAGS} $(o)${PROGRAM} ${OBJS} ${C_LIB}
 
 .c.o:
-	${CCOMPILE} $< -D${DATASIZE}
+	${CCOMPILE} $< -D${DATASIZE} $(o)$(basename $<).o
 
 cg.o:		cg.c  globals.h
 

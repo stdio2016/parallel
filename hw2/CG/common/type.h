@@ -7,8 +7,11 @@ typedef struct {
   double imag;
 } dcomplex;
 
-
+#ifndef min
 #define min(x,y)    ((x) < (y) ? (x) : (y))
+#endif
+#ifndef max
 #define max(x,y)    ((x) > (y) ? (x) : (y))
+#endif
 
 #endif //__TYPE_H__
