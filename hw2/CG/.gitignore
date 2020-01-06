@@ -1,3 +1,5 @@
 *.zip
 bin/
 *.o
+*.exe
+*.pdb

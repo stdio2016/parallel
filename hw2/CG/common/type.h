@@ -1,7 +1,11 @@
 #ifndef __TYPE_H__
 #define __TYPE_H__
 
+#ifdef __cplusplus
+typedef bool logical;
+#else
 typedef enum { false, true } logical;
+#endif
 typedef struct { 
   double real;
   double imag;
