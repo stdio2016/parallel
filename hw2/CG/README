@@ -14,4 +14,7 @@ Check correctness:
     Main function contains verification information, it will show VERIFICATION SUCCESSFUL/FAILED to indicate the correctness of the program.
 
 compile on windows with visual studio:
-    make CC=cl "o=/Fo" "CFLAGS=""/DEBUG /O2 /openmp""" "CLINKFLAGS=""/O2 /openmp""" C_LIB= DATASIZE=[LARGE|MEDIUMN|SMALL]
+    make CC=cl "o=/Fe" "Fo=/Fo" "CFLAGS=""/DEBUG /O2 /openmp""" "CLINKFLAGS=""/O2 /openmp""" C_LIB= DATASIZE=[LARGE|MEDIUMN|SMALL]
+
+compile CUDA version:
+    make NVCC=nvcc bin/cg_cuda DATASIZE=[LARGE|MEDIUMN|SMALL]
