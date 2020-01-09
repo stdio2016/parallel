@@ -86,12 +86,18 @@ __global__ void hist_kern(int *bmp, int n, int *out) {
         atomicAdd(&sb[rgb >> 16 & 255], 1);
     }
     __syncthreads();
-    out[gid] = sr[threadIdx.x];
-    out[gid + 256 * gridDim.x] = sg[threadIdx.x];
-    out[gid + 256 * gridDim.x * 2] = sb[threadIdx.x];
+    out[gid] += sr[threadIdx.x];
+    out[gid + 256 * gridDim.x] += sg[threadIdx.x];
+    out[gid + 256 * gridDim.x * 2] += sb[threadIdx.x];
 }
 
 int main() {
+    if (cudaSetDevice(0) != cudaSuccess) return 2;
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    printf("using GPU %s\n", prop.name);
+    int smcount = prop.multiProcessorCount;
+
     cudaEvent_t e, e2;
     cudaEventCreate(&e);
     cudaEventCreate(&e2);
@@ -103,8 +109,9 @@ int main() {
     int *gpu_what, *what;
     cudaMalloc(&gpu_what, sizeof(int) * 1048576);
 
-    int *hist = new int[256*3*20], *gpu_hist;
-    cudaMalloc(&gpu_hist, sizeof(int) * (256*3*20));
+    int *hist = new int[256*3*4*smcount], *gpu_hist;
+    cudaMalloc(&gpu_hist, sizeof(int) * (256*3*4*smcount));
+    cudaMemset(gpu_hist, 0, sizeof(int) * (256*3*4*smcount));
     int histogram_results[768] = {0};
 
     what = new int[1048576];
@@ -130,7 +137,7 @@ int main() {
         for (int i = bytes_read + tail; i < blocks*256; i++) buf[i] = 0;
 
         cudaMemcpy(gpu_buf, buf, BUF_SIZE, cudaMemcpyHostToDevice);
-        get_nl_count<<<40, 256>>>(gpu_buf, blocks, gpu_what);
+        get_nl_count<<<8*smcount, 256>>>(gpu_buf, blocks, gpu_what);
         cudaMemcpy(what, gpu_what, sizeof(int) * blocks, cudaMemcpyDeviceToHost);
 
         unsigned sum2 = sum;
@@ -140,20 +147,14 @@ int main() {
         what[0] = 0;
 
         cudaMemcpy(gpu_what, what, sizeof(int) * blocks, cudaMemcpyHostToDevice);
-        get_line_pos<<<40, 256>>>(gpu_buf, blocks, gpu_what, gpu_bmp);
-        cudaDeviceSynchronize();
+        get_line_pos<<<8*smcount, 256>>>(gpu_buf, blocks, gpu_what, gpu_bmp);
+        //cudaDeviceSynchronize();
 
         //cudaMemcpy(bmp + sum, gpu_bmp, sizeof(int) * (sum2 - sum), cudaMemcpyDeviceToHost);
-        parse<<<40, 256>>>(gpu_buf, gpu_bmp, sum2 - sum);
-        cudaDeviceSynchronize();
+        parse<<<8*smcount, 256>>>(gpu_buf, gpu_bmp, sum2 - sum);
+        //cudaDeviceSynchronize();
 
-        hist_kern<<<20, 256>>>(gpu_bmp, sum2-1 - sum, gpu_hist);
-        cudaMemcpy(hist, gpu_hist, sizeof(int) * (256*3*20), cudaMemcpyDeviceToHost);
-        for (int c = 0; c < 3; c++) {
-            for (int i = 0; i < 20; i++) {
-                for (int j = 0; j < 256; j++) histogram_results[j+c*256] += hist[j+i*256+c*256*20];
-            }
-        }
+        hist_kern<<<4*smcount, 256>>>(gpu_bmp, sum2-1 - sum, gpu_hist);
 
         printf("sum = %u sum2 = %u\n", sum, sum2);
         sum = sum2-1;
@@ -164,6 +165,13 @@ int main() {
         }
         if (tail > BUF_SIZE) tail = 0;
         for (int i = 0; i < tail; i++) buf[i] = buf[i + BUF_SIZE-tail];
+    }
+
+    cudaMemcpy(hist, gpu_hist, sizeof(int) * (256*3*4*smcount), cudaMemcpyDeviceToHost);
+    for (int c = 0; c < 3; c++) {
+        for (int i = 0; i < 4*smcount; i++) {
+            for (int j = 0; j < 256; j++) histogram_results[j+c*256] += hist[j+i*256+c*256*20];
+        }
     }
 
     int sum2 = 0;
