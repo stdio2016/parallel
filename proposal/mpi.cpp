@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <mpi.h>
+#include <time.h>
 #include "dlx.h"
 #include "loader.h"
 
@@ -42,6 +43,13 @@ int main(int argc, char *argv[]) {
   }
   loader.readFile(f);
   f.close();
+  if (argc > 2) {
+    sscanf(argv[2], "%d", &maxDepth);
+    if (maxDepth <= 0) {
+      cout << "depth must be > 0\n";
+      return 1;
+    }
+  }
   
   // prepare solver
   DLXSolver d;
@@ -52,7 +60,9 @@ int main(int argc, char *argv[]) {
   d.setRoot(loader.root);
   d.setRowCount(rowCount);
   
+  MPI_Request req;
   MPI_Status status;
+  struct timespec time_sleep = {0, 1};
   if (Proc_rank == 0) {
     d.maxSol = 1;
     d.setMaxLv(maxDepth);
@@ -60,20 +70,35 @@ int main(int argc, char *argv[]) {
     int total = 0;
     while (i > 1) {
       int ans;
-      MPI_Recv(&ans, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
-      total += ans;
+      int received = 0;
+      MPI_Irecv(&ans, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &req);
       int more = d.dlx();
       if (more) {
         for (int j = 0; j < d.solutions[1]; j++) {
           rows[j] = d.solRows[j];
         }
+      }
+      d.solCount = 0;
+
+      // busy wait
+      for (int spin = 0; spin < 100; spin++) {
+        MPI_Test(&req, &received, &status);
+        if (received) break;
+      }
+      // passive wait
+      while (!received) {
+        nanosleep(&time_sleep, NULL);
+        MPI_Test(&req, &received, &status);
+      }
+      total += ans;
+
+      if (more) {
         MPI_Send(rows, d.solutions[1], MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD);
       }
       else {
         MPI_Send(NULL, 0, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD);
         i--;
       }
-      d.solCount = 0;
     }
     cout << "solution count: " << total << "\n";
   }
